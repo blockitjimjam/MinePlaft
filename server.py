@@ -26,18 +26,20 @@ class ServerControlApp:
         global server_running
         self.root = root
         self.root.title("Server Control Panel")
+        self.root.resizable(False, False)
         
         # Server control buttons
         self.start_button = Button(root, text="Start Server", command=self.start_server)
-        self.start_button.grid(row=0, column=0, padx=10, pady=10)
-        
+        self.start_button.grid(row=0, column=0, padx=5, pady=10)
+        self.options_button = Button(root, text="Manage Server", state=DISABLED, command=self.open_management_window)
+        self.options_button.grid(row=0, column=1, padx=5, pady=10)
         self.stop_button = Button(root, text="Stop Server", command=self.stop_server)
-        self.stop_button.grid(row=0, column=1, padx=10, pady=10)
+        self.stop_button.grid(row=0, column=2, padx=10, pady=10)
         
         # Logs display (ScrolledText)
-        self.log_display = ScrolledText(root, height=15, width=60, state='disabled')
-        self.log_display.grid(row=1, column=0, columnspan=2, padx=10, pady=10)
-        
+        self.log_display = ScrolledText(root, height=15, width=60, state='disabled', wrap=WORD)
+        self.log_display.grid(row=1, column=0, columnspan=2, padx=10, pady=10, sticky="nsew")
+        root.rowconfigure(1, weight=1)
         # Command input
         self.command_entry = Entry(root, width=50)
         self.command_entry.grid(row=2, column=0, padx=10, pady=10)
@@ -53,6 +55,7 @@ class ServerControlApp:
         global server_running
         if not server_running:
             server_running = True
+            self.options_button["state"] = NORMAL
             threading.Thread(target=start_server, args=(self,)).start()
         else:
             self.append_info("Server is already running.")
@@ -82,6 +85,8 @@ class ServerControlApp:
                 broadcast_tp(splitc[1], (splitc[2], splitc[3], splitc[4]))
             if splitc[0] == "exec":
                 broadcast_exec(splitc[1], splitc[2])
+            if splitc[0] == "listplayers":
+                self.append_info(str(players))
         self.command_entry.delete(0, END)
 
     def append_info(self, message):
@@ -109,6 +114,70 @@ class ServerControlApp:
         self.log_display.insert(END, "[ERROR] " + message + '\n')
         self.log_display.configure(state='disabled')
         self.log_display.yview(END)  # Auto-scroll to the end
+    def open_management_window(self):
+        manager = Toplevel(self.root)
+        manager.title("Server Management")
+        
+        # Create Listbox
+        self.listbox = Listbox(manager)
+        self.listbox.pack(padx=20, pady=20)
+
+        # Create Kick and Ban buttons
+        self.kick_button = Button(manager, text="Kick", command=self.kick_player, state=DISABLED)
+        self.kick_button.pack(pady=5)
+
+        self.ban_button = Button(manager, text="Ban", command=self.ban_player, state=DISABLED)
+        self.ban_button.pack(pady=5)
+
+        # Bind selection event to update button states
+        self.listbox.bind('<<ListboxSelect>>', self.on_select)
+
+        # Schedule listbox updates
+        self.update_listbox()
+    def update_listbox(self):
+        self.listbox.delete(0, END)
+        for key in players.keys():
+            self.listbox.insert(END, key)
+        self.root.after(10000, self.update_listbox)
+
+    def on_select(self, event):
+        # Enable or disable buttons based on selection
+        if self.listbox.curselection():  # Check if something is selected
+            self.kick_button.config(state=NORMAL)
+            self.ban_button.config(state=NORMAL)
+        else:
+            self.kick_button.config(state=DISABLED)
+            self.ban_button.config(state=DISABLED)
+
+    def kick_player(self):
+        selected = self.listbox.curselection()
+        if selected:
+            def kick_them():
+                broadcast_kick(self.listbox.get(selected), reason_for_kick.get())
+                self.kick_button.config(state=DISABLED)
+                self.ban_button.config(state=DISABLED)
+                print(f"Kicked player with port: {player_key}")
+                players.pop(int(player_key), None)
+                kick_prompt.destroy()
+                kick_prompt.update()
+            kick_prompt = Toplevel(self.root)
+            kick_prompt.title("Kick Player")
+            Label(kick_prompt, text="Enter your reason for clicking the player").pack()
+            reason_for_kick = Entry(kick_prompt)
+            reason_for_kick.pack()
+            Button(kick_prompt, text="Kick player", command=kick_them).pack()
+            player_key = self.listbox.get(selected)
+            self.update_listbox()  # Refresh the listbox
+
+    def ban_player(self):
+        selected = self.listbox.curselection()
+        if selected:
+            player_key = self.listbox.get(selected)
+            print(f"Banned player with key: {player_key}")
+            # Here you would add the actual ban logic
+            # Example: players.pop(player_key) to remove from the dictionary
+            players.pop(int(player_key), None)
+            self.update_listbox()  # Refresh the listbox
 load = os.path.isfile("./world/world.mpw")
 root = Tk()
 app = ServerControlApp(root, load)
@@ -153,7 +222,8 @@ def handle_client(conn, addr, instance):
         instance.append_warn(f"Connection with {addr} closed")
         conn.shutdown(socket.SHUT_RDWR)
         conn.close()
-        del players[player_id]
+        if players[player_id]:
+            del players[player_id]
         player_connections.remove(conn)
         broadcast_disconnect(player_id)
 
@@ -203,6 +273,16 @@ def broadcast_exec(username, command):
         for player_conn in player_connections:
             if int(player_conn.getpeername()[1]) == int(username):
                 player_conn.send(exec_data)
+                break
+def broadcast_kick(username, reason):
+    kick_data = f"kick: {reason}\n".encode()
+    if username == "@a":
+        for player_conn in player_connections:
+                player_conn.send(kick_data)
+    else:
+        for player_conn in player_connections:
+            if int(player_conn.getpeername()[1]) == int(username):
+                player_conn.send(kick_data)
                 break
 def start_server(instance):
     global seed

@@ -6,6 +6,7 @@ import os
 from ursina.prefabs.first_person_controller import FirstPersonController
 from perlin_noise import PerlinNoise
 from PIL import Image
+from tkinter import messagebox
 global client
 try:
     def loadimg(image_path):
@@ -67,7 +68,7 @@ try:
     scale = 100 
     height_multiplier = 20 
     world_size = 1000  
-    server_ip = '10.104.148.119'
+    server_ip = '127.0.0.1' # Leave ip to be connected to here
     server_port = 5555
     global times
     times = 0
@@ -211,6 +212,11 @@ try:
                                 player.set_position((pos[0], pos[1], pos[2]))
                             elif message.startswith("exec: "):                    
                                 eval(message.replace("exec: ", ""))
+                            elif message.startswith("kick: "):     
+                                game_state: str = message.replace("kick: ", "")             
+                                messagebox.showerror("Kicked", f"You were kicked for the following reason:\n {game_state}")
+                                client.close()
+                                app.quit()
 
 
 
@@ -248,6 +254,7 @@ try:
             except Exception as exc:
                 print(exc)
                 if str(exc).startswith("[WinError 10053]"):
+                    app.quit()
                     sys.exit()
 
     # Start the gam
@@ -261,4 +268,5 @@ finally:
     print("huh")
     client.shutdown(socket.SHUT_RDWR)
     client.close()
+    app.quit()
     sys.exit()
