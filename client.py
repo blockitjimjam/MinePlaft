@@ -14,7 +14,6 @@ try:
         return Texture(img)
     global globalselectedtype
     globalselectedtype = "oak_planks"
-    app = Ursina(position=(100, 100))
 
     class Cube(Button):
         def __init__(self, position = (0,0,0), texture = loadimg("./assets/coarse_dirt.png")):
@@ -27,6 +26,7 @@ try:
                 color = color.white,
                 highlight_color = color.lime,
             )
+    
         def input(self, key):
             global globalselectedtype
             if self.hovered:
@@ -62,14 +62,79 @@ try:
                 elif key == "8":
                     globalselectedtype = "leaves"
 
+    class HomeMenu(Entity):
+        def __init__(self):
+            super().__init__()
+            self.title = Text(text="Welcome to MinePlaft", position=(-0.5, 0.4), scale=2, color=color.white)
+            self.ip_input = InputField(position=(-0.5, 0.1), placeholder="Enter Server IP", color=color.white)
+            self.port_input = InputField(position=(-0.5, 0), placeholder="Enter Server Port", color=color.white)
+            self.connect_button = Button(text="Connect", position=(-0.5, -0.1), scale=(0.2,0.1), color=color.azure, on_click=self.connect)
 
+        def connect(self):
+            server_ip = self.ip_input.text or '127.0.0.1'
+            server_port = int(self.port_input.text or 5555)
+            self.title.disable()
+            self.ip_input.disable()
+            self.port_input.disable()
+            self.connect_button.disable()
+            
+            start_game(server_ip, server_port)
+    class PauseMenu(Entity):
+        def __init__(self):
+            super().__init__()
+            self.title = Text(text="Game Paused", position=(-0.5, 0.4), scale=2, color=color.white)
+            self.connect_button = Button(text="Disconnect", position=(-0.5, -0.1), scale=(0.2,0.1), color=color.azure, on_click=self.connect)
+
+        def connect(self):
+            server_ip = self.ip_input.text or '127.0.0.1'
+            server_port = int(self.port_input.text or 5555)
+            self.title.disable()
+            self.ip_input.disable()
+            self.port_input.disable()
+            self.connect_button.disable()
+            
+            start_game(server_ip, server_port)
+    class Hotbar(Entity):
+        def __init__(self):
+            super().__init__()
+            self.slots = []
+            self.selected_index = 0
+
+            for i in range(8):
+                slot = Entity(parent=self, model='quad', texture='white_cube', color=color.gray, scale=(.1, .1),
+                            position=(i * .12, -.05), z=-.1)
+                self.slots.append(slot)
+
+            self.selection_box = Entity(parent=self, model='quad', color=color.yellow, scale=(.11, .11),
+                                        position=self.slots[self.selected_index].position, z=-.2)
+            textures = {
+                "coarse_dirt": loadimg("./assets/coarse_dirt.png"),
+                "bricks": loadimg("./assets/bricks.png"),
+                "crafting_table.png": loadimg("./assets/crafting_table.png"),
+                "glass": loadimg("./assets/glass.png"),
+                "grass": loadimg("./assets/grass.png"),
+                "gold_block": loadimg("./assets/gold_blockpng.png"),
+                "iron_block": loadimg("./assets/iron_block.png"),
+                "leaves": loadimg("./assets/leaves.png"),
+                "oak_planks": loadimg("./assets/oak_planks.png"),
+
+            }
+            self.item_textures = [textures.get("oak_planks"), textures.get("coarse_dirt"), textures.get("bricks"), textures.get("crafting_table.png"), textures.get("glass"), textures.get("gold_block"), textures.get("iron_block"), textures.get("leaves")] 
+            for i, texture in enumerate(self.item_textures):
+                self.slots[i].texture = texture
+
+            for key in range(1, 9):
+                hotkey = str(key)
+                setattr(self, f'on_{hotkey}', lambda k=key-1: self.select_slot(k))
+
+    def select_slot(self, index):
+        self.selected_index = index
+        self.selection_box.position = self.slots[self.selected_index].position
     chunk_size = 2
-    render_distance = 2
+    render_distance = 3
     scale = 100 
     height_multiplier = 20 
-    world_size = 1000  
-    server_ip = '127.0.0.1' # Leave ip to be connected to here
-    server_port = 5555
+    world_size = 1000
     global times
     times = 0
     global player_position
@@ -85,6 +150,7 @@ try:
         "bricks": loadimg("./assets/bricks.png"),
         "crafting_table.png": loadimg("./assets/crafting_table.png"),
         "glass": loadimg("./assets/glass.png"),
+        "grass": loadimg("./assets/grass.png"),
         "gold_block": loadimg("./assets/gold_blockpng.png"),
         "iron_block": loadimg("./assets/iron_block.png"),
         "leaves": loadimg("./assets/leaves.png"),
@@ -116,7 +182,7 @@ try:
                 if y > 5:
                     voxel = Cube(position=(world_x, y, world_z), texture=loadimg("./assets/snow.png"))
                 elif y > 0.1:
-                    voxel = Cube(position=(world_x, y, world_z), texture=loadimg("./assets/coarse_dirt.png"))
+                    voxel = Cube(position=(world_x, y, world_z), texture=loadimg("./assets/grass.png"))
                 else:
                     voxel = Cube(position=(world_x, y, world_z), texture=loadimg("./assets/coarse_dirt.png"))
                 voxel.disable() 
@@ -226,49 +292,57 @@ try:
 
 
     # Connect to the server
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client.connect((server_ip, server_port))
-    addr = client.getsockname()
-    UI = Text(register_mouse_input=False, text='Username: ' + str(addr[1]), x=.5, y=.5)
-    # Start receiving data from the server
-    threading.Thread(target=receive_data).start()
+    
     # Function to update chunks based on player's movement
-    def update_chunks():
-        unload_chunks()
-        load_chunks()
-
-    # Initialize player
-
-
-    # Set up update function
     def update():
-        global player
-        global player_position
-        if (seed != False):
-            if player == False:
-                player = FirstPersonController()
+        try:
+            global player
+            global player_position
+            if (seed != False):
                 player_position = f"{player.x},{player.y},{player.z}"
                 update_chunks()
-            else:
-                player_position = f"{player.x},{player.y},{player.z}"
-                update_chunks()
-        
-        
-            try:
-                client.send(player_position.encode())
-            except Exception as exc:
-                print(exc)
+                
+                
+                try:
+                    client.send(player_position.encode())
+                except Exception as exc:
+                    print(exc)
                 if str(exc).startswith("[WinError 10053]"):
                     app.quit()
                     sys.exit()
+        except:
+            pass
 
-    # Start the gam
-    app.setBackgroundColor(r=0, g=29, b=230)
-    app.setFrameRateMeter(False)
-    try:
-        app.run()
-    except:
-        print("Looks like the app counldnt fine NodePath. bruh")
+    # Initialize player
+    def start_game(server_ip, server_port):
+        global addr
+        global client
+        global player
+        global update_chunks
+        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client.connect((server_ip, server_port))
+        addr = client.getsockname()
+        player = FirstPersonController()
+        UI = Text(register_mouse_input=False, text='Username: ' + str(addr[1]), x=.5, y=.5)
+        # Start receiving data from the server
+        threading.Thread(target=receive_data).start()
+        def update_chunks():
+            unload_chunks()
+            load_chunks()
+        
+
+        # Start the gam
+        app.setBackgroundColor(r=0, g=29, b=230)
+        app.setFrameRateMeter(False)
+        # Set up update function
+    if __name__ == "__main__":
+        try:
+            app = Ursina(position=(100, 100))
+            HomeMenu()
+            app.run()
+        except Exception as e:
+            print("Looks like the app counldnt fine NodePath. bruh")
+            print(e)
 finally:
     print("huh")
     client.shutdown(socket.SHUT_RDWR)
