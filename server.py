@@ -1,5 +1,4 @@
 import os
-from random import randbytes
 import socket
 import threading
 import random
@@ -168,15 +167,24 @@ class ServerControlApp:
             Button(kick_prompt, text="Kick player", command=kick_them).pack()
             player_key = self.listbox.get(selected)
             self.update_listbox()  # Refresh the listbox
-
     def ban_player(self):
         selected = self.listbox.curselection()
         if selected:
+            def ban_them():
+                broadcast_ban(self.listbox.get(selected), reason_for_ban.get())
+                self.kick_button.config(state=DISABLED)
+                self.ban_button.config(state=DISABLED)
+                print(f"Banned player with port: {player_key}")
+                players.pop(int(player_key), None)
+                ban_prompt.destroy()
+                ban_prompt.update()
+            ban_prompt = Toplevel(self.root)
+            ban_prompt.title("Ban Player")
+            Label(ban_prompt, text="Enter your reason for banning the player").pack()
+            reason_for_ban = Entry(ban_prompt)
+            reason_for_ban.pack()
+            Button(ban_prompt, text="Ban player", command=ban_them).pack()
             player_key = self.listbox.get(selected)
-            print(f"Banned player with key: {player_key}")
-            # Here you would add the actual ban logic
-            # Example: players.pop(player_key) to remove from the dictionary
-            players.pop(int(player_key), None)
             self.update_listbox()  # Refresh the listbox
 load = os.path.isfile("./world/world.mpw")
 root = Tk()
@@ -220,7 +228,6 @@ def handle_client(conn, addr, instance):
                 break
     finally:
         instance.append_warn(f"Connection with {addr} closed")
-        conn.shutdown(socket.SHUT_RDWR)
         conn.close()
         if players[player_id]:
             del players[player_id]
@@ -229,7 +236,16 @@ def handle_client(conn, addr, instance):
 
 
 
-
+def isbanned(ip: str) -> bool:
+    isbannedfile = os.path.isfile("banned_players.txt")
+    if isbannedfile:
+        with open("banned_players.txt", "r") as file:
+            text = file.read()
+            banned_ips = text.splitlines()
+            for x in banned_ips:
+                if x == ip:
+                    return True
+            return False
 
 # Function to broadcast the game state to all connected clients
 def broadcast_state():
@@ -284,6 +300,22 @@ def broadcast_kick(username, reason):
             if int(player_conn.getpeername()[1]) == int(username):
                 player_conn.send(kick_data)
                 break
+def broadcast_ban(username, reason):
+    ban_data = f"ban: {reason}\n".encode()
+    if username == "@a":
+        for player_conn in player_connections:
+                player_conn.send(ban_data)
+    else:
+        for player_conn in player_connections:
+            if int(player_conn.getpeername()[1]) == int(username):
+                player_conn.send(ban_data)
+                if os.path.isfile("./banned_players.txt"):
+                    with open("./banned_players.txt", "a") as banned_file:
+                        banned_file.write(f"\n{player_conn.getpeername()[0]}")
+                else:
+                   with open("./banned_players.txt", "w") as banned_file:
+                        banned_file.write(f"\n{player_conn.getpeername()[0]}") 
+                break
 def start_server(instance):
     global seed
     global placed_blocks
@@ -319,8 +351,13 @@ def start_server(instance):
     while server_running:
         try:
             conn, addr = server.accept()
-            player_connections.append(conn)
-            threading.Thread(target=handle_client, args=(conn, addr, instance)).start()
+            if isbanned(addr[0]):
+                instance.append_info(f"Banned player {addr} attempted to join the server.")
+                conn.send("ban: You are banned from this server.\n".encode()) 
+                conn.close()
+            else:
+                player_connections.append(conn)
+                threading.Thread(target=handle_client, args=(conn, addr, instance)).start()
         except socket.timeout:
             if not server_running:
                 break

@@ -217,6 +217,11 @@ try:
                                 messagebox.showerror("Kicked", f"You were kicked for the following reason:\n {game_state}")
                                 client.close()
                                 app.quit()
+                            elif message.startswith("ban: "):     
+                                game_state: str = message.replace("ban: ", "")             
+                                messagebox.showerror("Banned", f"You were banned for the following reason:\n {game_state}")
+                                client.close()
+                                app.quit()
 
 
 
